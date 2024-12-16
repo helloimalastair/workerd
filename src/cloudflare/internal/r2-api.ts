@@ -222,10 +222,10 @@ function validateBufHex(
   return;
 }
 
-function createPutRequestInit(
+async function createPutRequestInit(
   req: any,
   value?: ReadableStream | ArrayBuffer | ArrayBufferView | Blob | string | null
-): Request {
+): Promise<Request> {
   const metaBuffer = new TextEncoder().encode(JSON.stringify(req));
   let body: BodyInit;
   if (value == undefined) {
@@ -238,10 +238,20 @@ function createPutRequestInit(
     value.pipeTo(writable);
     body = readable;
   } else {
+    let encoded: Uint8Array;
+    if (typeof value === 'string') {
+      encoded = new TextEncoder().encode(value);
+    } else if (value instanceof Blob) {
+      encoded = new Uint8Array(await value.arrayBuffer());
+    } else if (value instanceof ArrayBuffer) {
+      encoded = new Uint8Array(value);
+    } else {
+      encoded = new Uint8Array(value.buffer);
+    }
     body = new ReadableStream({
       start(controller) {
         controller.enqueue(metaBuffer);
-        controller.enqueue(value);
+        controller.enqueue(encoded);
         controller.close();
       },
     });
@@ -451,8 +461,7 @@ export class R2MultipartUpload {
       }
     }
     const res = await this.#fetcher.fetch(
-      'https://r2',
-      createPutRequestInit(req, value)
+      await createPutRequestInit(req, value)
     );
     if (!res.ok) {
       const maybeError = renderError(res);
@@ -470,7 +479,7 @@ export class R2MultipartUpload {
       object: this.key,
       uploadId: this.uploadId,
     };
-    const res = await this.#fetcher.fetch(createPutRequestInit(req));
+    const res = await this.#fetcher.fetch(await createPutRequestInit(req));
     if (!res.ok) {
       const maybeError = renderError(res);
       if (maybeError) {
@@ -485,7 +494,7 @@ export class R2MultipartUpload {
       object: this.key,
       parts: uploadedParts,
     };
-    const res = await this.#fetcher.fetch(createPutRequestInit(req));
+    const res = await this.#fetcher.fetch(await createPutRequestInit(req));
     return new R2Object(await res.json());
   }
 }
@@ -955,7 +964,9 @@ class R2Bucket implements R2Bucket {
         };
       }
     }
-    const res = await this.#fetcher.fetch(createPutRequestInit(req, value));
+    const res = await this.#fetcher.fetch(
+      await createPutRequestInit(req, value)
+    );
     return new R2Object(await res.json());
   }
   async createMultipartUpload(
@@ -995,7 +1006,7 @@ class R2Bucket implements R2Bucket {
         };
       }
     }
-    const res = await this.#fetcher.fetch(createPutRequestInit(req));
+    const res = await this.#fetcher.fetch(await createPutRequestInit(req));
     if (!res.ok) {
       const maybeError = renderError(res);
       if (maybeError) {
@@ -1018,7 +1029,7 @@ class R2Bucket implements R2Bucket {
     } else if (Array.isArray(objects)) {
       req.objects = objects;
     }
-    const res = await this.#fetcher.fetch(createPutRequestInit(req));
+    const res = await this.#fetcher.fetch(await createPutRequestInit(req));
     if (!res.ok) {
       const maybeError = renderError(res);
       if (maybeError) {
